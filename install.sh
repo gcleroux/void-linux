@@ -2,6 +2,12 @@
 
 # Script vars
 export DISK=/dev/vda
+export BOOT_PART=1
+export ROOT_PART=2
+
+export DISK_BOOT=${DISK}${BOOT_PART}
+export DISK_ROOT=${DISK}${ROOT_PART}
+
 export BTRFSOPTS=rw,noatime,compress=zstd
 export ESPLABEL=BOOT
 export ROOTLABEL=ROOT
@@ -9,8 +15,8 @@ export ROOTLABEL=ROOT
 export REPO=https://mirrors.servercentral.com/voidlinux/current
 export ARCH=x86_64
 
-export PKGS="base-system base-devel booster limine cryptsetup foot xtools"
-export IGNORE_PKGS="dracut"
+export PKGS="base-system base-devel booster limine cryptsetup xtools clevis neovim"
+export IGNORE_PKGS="dracut nvi"
 
 xbps-install -y gptfdisk
 
@@ -24,11 +30,11 @@ sgdisk -t 2:8300 ${DISK}
 
 # Encrypting root partition
 # TODO: Change passphrase
-echo "asdfasdf" | cryptsetup -q luksFormat ${DISK}2
-echo "asdfasdf" | cryptsetup -q luksOpen ${DISK}2 root
+echo "asdfasdf" | cryptsetup -q luksFormat ${DISK_ROOT}
+echo "asdfasdf" | cryptsetup -q luksOpen ${DISK_ROOT} root
 
 # Formatting FS
-mkfs.vfat -F 32 -n ${ESPLABEL} ${DISK}1
+mkfs.vfat -F 32 -n ${ESPLABEL} ${DISK_BOOT}
 mkfs.btrfs -L ${ROOTLABEL} -f /dev/mapper/root
 
 # Creating the subvolumes
@@ -44,7 +50,7 @@ umount /mnt
 mount -o ${BTRFSOPTS},subvol=@ /dev/mapper/root /mnt
 mkdir -pv /mnt/boot /mnt/home /mnt/var/log /mnt/var/cache /mnt/.snapshots
 
-mount ${DISK}1 /mnt/boot
+mount ${DISK_BOOT} /mnt/boot
 mount -o ${BTRFSOPTS},subvol=@home /dev/mapper/root /mnt/home
 mount -o ${BTRFSOPTS},subvol=@snapshots /dev/mapper/root /mnt/.snapshots
 mount -o ${BTRFSOPTS},subvol=@log /dev/mapper/root /mnt/var/log
@@ -85,9 +91,10 @@ echo "en_CA.UTF-8 UTF-8" >>/mnt/etc/default/libc-locales
 mkdir -pv /mnt/boot/EFI/BOOT
 cp /mnt/usr/share/limine/BOOTX64.EFI /mnt/boot/EFI/BOOT
 xbps-alternatives -r /mnt -s booster
+echo "universal: true" >>/mnt/etc/booster.yaml
 
 UUID=$(blkid -s UUID -o value /dev/mapper/root)
-LUKSUUID=$(blkid -s UUID -o value ${DISK}2)
+LUKSUUID=$(blkid -s UUID -o value ${DISK_ROOT})
 cat <<EOF >/mnt/boot/limine.conf
 timeout: 5
 
@@ -97,6 +104,9 @@ timeout: 5
     module_path: boot():/initramfs-6.12.54_1.img
     cmdline: quiet rd.luks.uuid=$LUKSUUID root=UUID=$UUID rootfstype=btrfs rootflags=subvol=@ rw
 EOF
+
+# Binding LUKS volume to TPM
+xchroot /mnt /bin/sh -c "echo asdfasdf | clevis luks bind -d ${DISK_ROOT} -k - tpm2 '{}'"
 
 # Setting the upstream repository
 xbps-install -Sy -r /mnt -R "$REPO" void-repo-nonfree
