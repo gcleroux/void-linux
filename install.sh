@@ -4,11 +4,18 @@
 export DISK=/dev/vda
 export BOOT_PART=1
 export ROOT_PART=2
+export BTRFSOPTS=rw,noatime,compress=zstd
+
+export HOST=voidlinux
+export USER=guillaume
+export USER_PW=void
+export ROOT_PW=void
+export LUKS_PASSPHRASE=void
+export TIMEZONE=America/Toronto
+export LOCALE=en_CA.UTF-8
 
 export DISK_BOOT=${DISK}${BOOT_PART}
 export DISK_ROOT=${DISK}${ROOT_PART}
-
-export BTRFSOPTS=rw,noatime,compress=zstd
 export ESPLABEL=BOOT
 export ROOTLABEL=ROOT
 # Set XBPS vars
@@ -29,9 +36,8 @@ sgdisk -n 2:0:-10% ${DISK} # LINUX
 sgdisk -t 2:8300 ${DISK}
 
 # Encrypting root partition
-# TODO: Change passphrase
-echo "asdfasdf" | cryptsetup -q luksFormat ${DISK_ROOT}
-echo "asdfasdf" | cryptsetup -q luksOpen ${DISK_ROOT} root
+echo "${LUKS_PASSPHRASE}" | cryptsetup -q luksFormat ${DISK_ROOT}
+echo "${LUKS_PASSPHRASE}" | cryptsetup -q luksOpen ${DISK_ROOT} root
 
 # Formatting FS
 mkfs.vfat -F 32 -n ${ESPLABEL} ${DISK_BOOT}
@@ -73,24 +79,23 @@ XBPS_ARCH=$ARCH xbps-install -S -y -r /mnt -R "$REPO" ${PKGS}
 xgenfstab -U /mnt >/mnt/etc/fstab
 
 # User settings
-useradd -R /mnt -mG wheel,input,audio,video guillaume
-echo "guillaume:void" | chpasswd -R /mnt -c SHA512 # TODO: Change password
-echo "root:voidlinux" | chpasswd -R /mnt -c SHA512
-xchroot /mnt chsh -s /usr/bin/bash guillaume
+useradd -R /mnt -mG wheel,input,audio,video ${USER}
+echo "${USER}:${USER_PW}" | chpasswd -R /mnt -c SHA512
+echo "root:${ROOT_PW}" | chpasswd -R /mnt -c SHA512
+xchroot /mnt chsh -s /usr/bin/bash ${USER}
 xchroot /mnt chsh -s /bin/bash root
 echo "%wheel ALL=(ALL:ALL) ALL" >/mnt/etc/sudoers.d/99-wheel
 echo "%wheel ALL=(ALL) NOPASSWD: /sbin/reboot, /sbin/poweroff" >>/mnt/etc/sudoers.d/99-wheel
 
 # System locale settings
-echo voidlinux >/mnt/etc/hostname
-xchroot /mnt ln -sf /usr/share/zoneinfo/America/Toronto /etc/localtime
-echo "LANG=en_CA.UTF-8" >/mnt/etc/locale.conf
-echo "en_CA.UTF-8 UTF-8" >>/mnt/etc/default/libc-locales
+echo ${HOST} >/mnt/etc/hostname
+xchroot /mnt ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime
+echo "LANG=${LOCALE}" >/mnt/etc/locale.conf
+echo "${LOCALE} UTF-8" >>/mnt/etc/default/libc-locales
 
 # Setup the bootloader
 mkdir -pv /mnt/boot/EFI/BOOT
 cp /mnt/usr/share/limine/BOOTX64.EFI /mnt/boot/EFI/BOOT
-xbps-alternatives -r /mnt -s booster
 echo "universal: true" >>/mnt/etc/booster.yaml
 
 UUID=$(blkid -s UUID -o value /dev/mapper/root)
@@ -106,7 +111,7 @@ timeout: 5
 EOF
 
 # Binding LUKS volume to TPM
-xchroot /mnt /bin/sh -c "echo asdfasdf | clevis luks bind -d ${DISK_ROOT} -k - tpm2 '{}'"
+xchroot /mnt /bin/sh -c "echo ${LUKS_PASSPHRASE} | clevis luks bind -d ${DISK_ROOT} -k - tpm2 '{}'"
 
 # Setting the upstream repository
 xbps-install -Sy -r /mnt -R "$REPO" void-repo-nonfree
