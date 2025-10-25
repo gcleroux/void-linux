@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# Kernel post-install hook that regenerate a latest symlink
+#
+# Arguments passed to this script: $1 pkgname, $2 version.
+#
+PKGNAME="$1"
+VERSION="$2"
+
+# Gest the latest kernel version installed
+LINUX_LATEST=$(xbps-query --regex -s '^linux[0-9.]+-[0-9._]+' | sort -Vrk2 | cut -d ' ' -f 2 | cut -d '-' -f 2 | head -n 1)
+
+# Symlink to latest to keep boot entry consistent
+ln -sf /boot/config-${LINUX_LATEST} /boot/config-latest
+ln -sf /boot/vmlinuz-${LINUX_LATEST} /boot/vmlinuz-latest
+ln -sf /boot/initramfs-${LINUX_LATEST}.img /boot/initramfs-latest.img
